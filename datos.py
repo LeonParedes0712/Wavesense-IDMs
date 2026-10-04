@@ -22,7 +22,7 @@ def main():
     TestsignalEnabled = False
     FrameLength = 1
     AcquisitionDurationInSeconds = 25
-    DataFile = "datos_dibujando(movimientoyreaccion).csv"
+    DataFile = "datos_subway.csv"
 
     print("Unicorn EEG - Adquisición CSV")
     print("-----------------------------")
