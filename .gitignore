@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Secrets and environment variables
+.env
+.env.*
+*.key
+*.pem
+
+# Raw and processed datasets
+data/raw/*
+data/processed/*
+
+# Keep repository structure files
+!data/raw/.gitkeep
+!data/raw/README.md
+!data/processed/.gitkeep
+!data/processed/README.md
+!data/README.md
+
+# Common EEG / scientific data formats
+*.edf
+*.bdf
+*.fif
+*.set
+*.vhdr
+*.vmrk
+*.eeg
+*.mat
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# Data tables generated from experiments
+data/**/*.csv
+data/**/*.parquet
+
+# Trained ML models
+models/*.pkl
+models/*.joblib
+models/*.pt
+models/*.pth
+models/*.onnx
+
+# Generated results
+results/figures/*
+results/metrics/*
+
+# Keep results structure files
+!results/figures/.gitkeep
+!results/figures/README.md
+!results/metrics/.gitkeep
+!results/metrics/README.md
+!results/README.md
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

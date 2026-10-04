@@ -1,6 +1,6 @@
 # Notebooks
 
-> Estado inicial: esta carpeta contiene únicamente documentación. Los archivos, datos y funcionalidades descritos son trabajo futuro.
+> Estado inicial: contiene documentación y plantillas sin lógica real ni resultados. Las funcionalidades descritas son trabajo futuro.
 
 Esta carpeta se utiliza para experimentación, análisis exploratorio y pruebas rápidas.
 
@@ -65,4 +65,4 @@ Ejemplos:
 
 No guardar modelos finales directamente dentro de los notebooks.
 
-No incorporar credenciales ni datos personales en celdas o salidas. Los nombres de notebooks anteriores son una propuesta para la siguiente etapa; aún no se han creado.
+No incorporar credenciales ni datos personales en celdas o salidas. Los notebooks anteriores son plantillas con una descripción y una celda TODO, sin análisis ejecutado.

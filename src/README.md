@@ -1,6 +1,6 @@
 # Source Code
 
-> Estado inicial: esta carpeta contiene únicamente documentación. Los archivos, datos y funcionalidades descritos son trabajo futuro.
+> Estado inicial: contiene documentación y plantillas sin lógica real ni resultados. Las funcionalidades descritas son trabajo futuro.
 
 Esta carpeta contiene el código reutilizable y estable del proyecto.
 
@@ -68,4 +68,4 @@ No agregar código experimental desorganizado aquí.
 
 Los experimentos iniciales deben realizarse primero en `notebooks/`.
 
-Los módulos anteriores aún no se han creado. No guardar aquí datos, modelos entrenados, credenciales ni resultados de experimentos.
+Los módulos anteriores contienen únicamente docstrings y comentarios TODO. No guardar aquí datos, modelos entrenados, credenciales ni resultados de experimentos.

@@ -1,6 +1,6 @@
 # Documentation
 
-> Estado inicial: esta carpeta contiene únicamente documentación. Los archivos, datos y funcionalidades descritos son trabajo futuro.
+> Estado inicial: documentación conceptual; las especificaciones de hardware y el protocolo siguen pendientes de confirmación.
 
 Esta carpeta contiene documentación técnica y experimental del proyecto.
 
@@ -20,7 +20,7 @@ Describe cómo se obtienen los datos y cómo se generan las etiquetas experiment
 
 Esta documentación es importante para poder interpretar correctamente los resultados del modelo.
 
-No agregar aquí código, datasets, credenciales ni especificaciones o resultados sin confirmar. Los tres documentos propuestos todavía no existen; sus contenidos iniciales se reúnen a continuación.
+No agregar aquí código, datasets, credenciales ni especificaciones o resultados sin confirmar. Los documentos `architecture.md`, `hardware.md` y `data_protocol.md` contienen las bases que también se conservan a continuación.
 
 ## System Architecture
 
