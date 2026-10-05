@@ -10,7 +10,7 @@ def open_distraction_video() -> bool:
     Return the browser launch result. The application, never the tutor or
     the LLM, decides whether to call this after receiving tutor text.
     """
-    url = os.environ.get("DISTRACTION_VIDEO_URL", "").strip()
+    url = os.environ.get("DISTRACTION_VIDEO_URL", "https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044").strip()
     if not url:
         raise RuntimeError(
             "Configura DISTRACTION_VIDEO_URL localmente para abrir el video."
