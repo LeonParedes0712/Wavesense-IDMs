@@ -1,6 +1,6 @@
 # Source Code
 
-> El adaptador, triggering y tutor están implementados. Preprocesamiento, características y modelos siguen siendo plantillas; no hay resultados experimentales.
+> El runtime del modelo, adaptador, triggering y tutor están implementados. Preprocesamiento y extracción de características siguen siendo plantillas; el runtime no valida el rendimiento experimental del modelo.
 
 Esta carpeta contiene el código reutilizable y estable del proyecto.
 
@@ -31,15 +31,125 @@ Ejemplos:
 
 ## models.py
 
-Código relacionado con los modelos de clasificación.
+`EEGModelRuntime` carga una vez el modelo local y el escalador opcional mediante
+`EEGModelRuntime.from_env()`. Usa `joblib.load`, compatible con los artefactos
+locales inspeccionados. `EEG_MODEL_PATH` es obligatoria; `EEG_SCALER_PATH` vacía
+omite el escalador. Si se configura una ruta inexistente o ilegible, falla sin
+continuar silenciosamente. Las rutas relativas parten del directorio de trabajo;
+se admite `~`. La aplicación carga `.env` si lo necesita. Importar el módulo no
+carga artefactos ni inicia servicios. Cargar solo archivos pickle/joblib locales
+de confianza: su deserialización puede ejecutar código.
 
-Ejemplos:
+### Contrato de entrada y salida
 
-- creación de modelos;
-- entrenamiento;
-- evaluación;
-- inferencia;
-- probabilidades de clase.
+- `predict_proba(features, *, feature_names=None)` recibe un vector `(p,)` o una
+  matriz `(1, p)` de números reales, finitos, no vacía. Devuelve
+  `dict[str, float]`, con las etiquetas originales y el orden de `model.classes_`.
+- `predict_proba_batch(features, *, feature_names=None)` acepta `(n, p)` y devuelve
+  una lista de esos diccionarios, uno por fila y en el mismo orden. También admite
+  un vector como lote de una fila. El método individual rechaza varias filas para
+  evitar descartar ventanas o promediar probabilidades implícitamente.
+- Se acepta `pandas.DataFrame` con columnas exactas o arrays/listas acompañados de
+  `feature_names`, que declara el orden real de sus valores. No se reordenan
+  columnas automáticamente. No se aceptan strings numéricos, booleanos, complejos,
+  NaN/inf, variables adicionales ni nombres duplicados.
+- `runtime.feature_names` es la tupla ordenada del contrato y `runtime.n_features`
+  es su dimensión. Se obtienen de `feature_names_in_` del modelo/escalador. Si
+  ambos lo tienen, deben coincidir. También se valida `n_features_in_`.
+  Si faltan nombres en ambos artefactos, se exige
+  `from_env(feature_names=esquema_confirmado_por_entrenamiento)` (o el mismo
+  argumento al constructor). La dimensión sola no identifica características.
+  El error `ModelContractError` explica qué falta; no se inventa un esquema.
+- El escalador ejecuta `transform` antes de `model.predict_proba`; nunca `fit`.
+  Debe conservar filas, variables y orden. Se entregan DataFrames a estimadores
+  que guardan nombres. Las probabilidades deben tener una columna por clase,
+  ser finitas, estar en `[0, 1]` y sumar aproximadamente uno por fila.
+  No se aplica softmax, normalización ni redondeo en el runtime.
+- Cada diccionario se pasa directamente a
+  `to_wavesense_probabilities(output, signal_has_artifact=...)`. La calidad de
+  señal se determina fuera del runtime. El adaptador conserva la responsabilidad
+  de convertir clases a REST / LOW_LOAD / HIGH_LOAD / ARTIFACT.
+  Las etiquetas de nuevos modelos deben ser compatibles con el mapeo documentado
+  en `ADAPTACION_WAVESENSE.md`; el runtime no renombra clases.
+
+### Características observadas y trabajo pendiente de adquisición
+
+Los archivos locales ignorados `modelo_eeg_unicorn.pkl` (RandomForestClassifier)
+y `escalador_eeg.pkl` (StandardScaler) declaran 32 características idénticas:
+
+```python
+# Orden exacto observado en feature_names_in_ de ambos artefactos:
+observed_names = tuple(
+    f"Canal_{channel}_{band}"
+    for channel in range(1, 9)
+    for band in ("Theta", "Alpha", "Beta", "Gamma")
+)
+```
+
+Primero las cuatro bandas de Canal_1, luego Canal_2, hasta Canal_8. Las clases
+observadas, en orden, son `BRAWL_STARS`, `DIBUJANDO`, `MATH_LOAD`, `REST`,
+`SUBWAY_SURFERS`. Estos datos describen los artefactos inspeccionados, no se
+codifican como valores obligatorios para futuros modelos.
+
+El notebook `analisis_eeg.ipynb`, idéntico en la referencia local `origin/modelo`,
+muestra una extracción candidata: 250 Hz; Butterworth de orden 4 entre 1 y
+40 Hz con `filtfilt`; ventanas de hasta 250 muestras; `welch` por canal y suma
+de bins PSD con límites inclusivos Theta 4–8, Alpha 8–12, Beta 12–30 y Gamma
+30–45 Hz. Selecciona canales desde las columnas CSV y contiene otros análisis
+con ventanas de 10 segundos. Su StandardScaler se presenta como normalización
+para visualización; no contiene el entrenamiento/exportación que vincule
+inequívocamente esa receta con ambos `.pkl`.
+
+Por tanto, **se conoce el esquema de 32 columnas, pero falta confirmar la receta
+de entrenamiento**: correspondencia física y unidades de Canal_1…Canal_8,
+ventana y paso usados, parámetros/versiones exactos de Welch y filtros, estado
+entre ventanas y si el clasificador fue entrenado con ese escalador. No se debe
+sustituir la suma de bins por integrales, ratios o porcentajes de línea base sin
+confirmarlo. La presencia de Gamma hasta 45 Hz junto al filtro hasta 40 Hz también
+debe reconciliarse con el entrenamiento. Los nombres no permiten resolverlo.
+
+El futuro módulo de adquisición/preprocesamiento/extracción deberá entregar una
+fila por ventana, con esas 32 potencias **antes del escalado externo**, una vez
+confirmada la receta. Debe adjuntar los nombres reales de extracción o construir
+un DataFrame en ese orden; copiar `runtime.feature_names` como etiqueta de valores
+desconocidos no valida su significado. El indicador de artefacto viajará separado
+al adaptador. Este módulo no adquiere Unicorn, filtra, extrae características,
+decide triggers ni llama al tutor/OpenAI.
+
+### Uso local
+
+Desde la raíz, con las dependencias de `requirements.txt` instaladas y los
+artefactos de confianza ya presentes (no se versionan):
+
+```bash
+export EEG_MODEL_PATH=./modelo_eeg_unicorn.pkl
+export EEG_SCALER_PATH=./escalador_eeg.pkl
+python -c 'from src.models import EEGModelRuntime; r = EEGModelRuntime.from_env(); print(r.feature_names); print(r.classes)'
+```
+
+Inferencia sobre un CSV **local** de características ya calculadas, con encabezados
+exactos y sin columna de etiqueta, índice ni timestamp:
+
+```bash
+python - <<'PYCODE'
+import pandas as pd
+from src.models import EEGModelRuntime
+from src.model_adapter import to_wavesense_probabilities
+
+runtime = EEGModelRuntime.from_env()
+features = pd.read_csv("data/processed/ventana_features.csv")  # Una fila real.
+output = runtime.predict_proba(features)
+print(output)
+print(to_wavesense_probabilities(output, signal_has_artifact=False))
+PYCODE
+```
+
+Para un array proporcionado por el extractor:
+`output = runtime.predict_proba(vector, feature_names=nombres_del_extractor)`.
+Para varias ventanas, usar `predict_proba_batch` y aplicar el adaptador a cada
+salida con el indicador de calidad correspondiente. Reutilizar la instancia;
+no cargar los archivos en cada ventana. El CSV del ejemplo debe producirlo el
+extractor futuro: no se proporciona un vector inventado ni se ejecuta el notebook.
 
 ## triggering.py
 
