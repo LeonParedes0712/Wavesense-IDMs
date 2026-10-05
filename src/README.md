@@ -1,33 +1,232 @@
 # Source Code
 
-> El runtime del modelo, adaptador, triggering y tutor están implementados. Preprocesamiento y extracción de características siguen siendo plantillas; el runtime no valida el rendimiento experimental del modelo.
+> Adquisición diferida, preprocesamiento, extracción, runtime, adaptador, triggering y tutor tienen interfaces y pruebas. La integración física en Windows y la equivalencia con el entrenamiento siguen pendientes. El prototipo no diagnostica condiciones médicas ni psicológicas.
 
 Esta carpeta contiene el código reutilizable y estable del proyecto.
 
 El objetivo es mover aquí las funciones que ya hayan sido probadas en los notebooks y que formen parte del pipeline real.
 
+## Flujo implementado
+
+```mermaid
+flowchart TD
+    U[UnicornPy en Windows o fuente inyectada] --> W[WindowStream: ventana completa]
+    W --> V[Validación de forma y frecuencia]
+    V --> Q[Calidad de señal cruda]
+    Q -->|aceptable| P[Referencia y filtro configurados]
+    P --> F[Welch: DataFrame de 32 características]
+    F --> M[EEGModelRuntime: escalador y predict_proba]
+    M --> A[model_adapter]
+    V -->|inválida| X[ARTIFACT]
+    Q -->|artefacto| X
+    X --> T[TemporalTrigger persistente]
+    A --> T
+    T -->|HIGH_LOAD con trigger válido| O[Tutor opcional]
+```
+
+## eeg_config.py
+
+Centraliza `EEGConfig`, `QualityConfig` y `FEATURE_NAMES` para que adquisición,
+validación y extracción compartan el mismo contrato. `from_env()` lee el entorno;
+la aplicación llama `load_dotenv()` explícitamente. No lee `.env` al importar.
+
+| Variables | Default provisional / significado |
+| --- | --- |
+| `EEG_SAMPLE_RATE`, `EEG_WINDOW_SECONDS` | 250 Hz, 1 s = 250 muestras exactas |
+| `EEG_HOP_SECONDS`, `EEG_CHANNEL_COUNT` | 1 s sin solapamiento entre ventanas, 8 canales obligatorios |
+| `EEG_THETA_HZ`, `EEG_ALPHA_HZ` | `4,8`, `8,12` |
+| `EEG_BETA_HZ`, `EEG_GAMMA_HZ` | `12,30`, `30,45` |
+| `EEG_FILTER_ENABLED` | `true`; permite desactivar explícitamente el filtro |
+| `EEG_FILTER_LOW_HZ`, `EEG_FILTER_HIGH_HZ`, `EEG_FILTER_ORDER` | 1, 40, 4 |
+| `EEG_WELCH_NPERSEG`, `EEG_WELCH_OVERLAP` | 256 (limitado al largo de ventana), 0.5 de solapamiento interno |
+| `EEG_REFERENCE` | `as_acquired` conserva referencia; `common_average` resta el promedio de los 8 canales por muestra |
+| `EEG_INPUT_UNITS` | `unconfirmed`; también admite `uV` o `V`. Es una declaración de unidades, no convierte valores ni verifica el SDK |
+| `EEG_FLATLINE_PTP` | 0: un canal constante invalida toda la ventana |
+| `EEG_MAX_ABS`, `EEG_MAX_STEP` | Vacíos: desactivados. Límites positivos de amplitud absoluta y diferencia entre muestras, en las unidades de entrada |
+| `UNICORN_PYTHON_PATH` | Vacío si el SDK ya es accesible; de otro modo carpeta local `Lib` con UnicornPy y sus DLL |
+| `UNICORN_SERIAL` | Vacío permite conectar solo si hay exactamente un dispositivo disponible |
+| `UNICORN_EEG_CHANNEL_NAMES` | `EEG 1,...,EEG 8`; su orden determina Canal_1…Canal_8 |
+
+Las duraciones multiplicadas por la frecuencia deben ser enteros positivos, el
+paso no puede exceder la ventana y las bandas/filtro deben estar bajo Nyquist.
+No se remuestrea ni se completa una ventana con ceros. Cambiar `EEG_HOP_SECONDS`
+cambia el tiempo que representa la persistencia del trigger: calibrarlos juntos.
+No hay un umbral de amplitud universal; se dejan esos límites vacíos hasta conocer
+las unidades y calibrar el dispositivo. Esto **no certifica señal libre de ruido**.
+
 ## preprocessing.py
 
-Funciones relacionadas con limpieza y preparación de señales EEG.
+Funciones puras sin efectos externos:
 
-Ejemplos:
-
-- filtros;
-- segmentación;
-- normalización;
-- detección o manejo de artefactos.
+- `validate_window(window, sample_rate=..., config=...)`: copia float64 con forma
+  exacta `(window_samples, 8)`; rechaza entrada vacía, NaN/inf, strings, complejos,
+  booleanos, frecuencia distinta o ventana incompleta mediante `ValueError`.
+- `assess_quality(..., quality=...)`: calidad sobre señal **sin filtrar**. Devuelve
+  `SignalQuality(has_artifact, reasons)`. Marca cualquier canal plano, amplitud o
+  salto sobre los límites habilitados, y desbordamiento numérico. No identifica
+  emociones ni distingue todos los tipos de EEG/EMG o fallos de contacto.
+- `filter_window(...)`: referencia seleccionada y Butterworth SOS adelante/atrás,
+  `axis=0`, padding odd explícito según la fórmula de
+  [SciPy sosfiltfilt](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sosfiltfilt.html).
+  Usa toda la ventana; no es un filtro causal con estado entre bloques. Rechaza
+  ventanas demasiado cortas. No altera la matriz original.
 
 ## features.py
 
-Funciones para extraer características de las señales.
+`extract_band_powers(window, sample_rate=..., config=...)` recibe una ventana ya
+preprocesada. Produce un DataFrame `(1,32)` de potencias **sin escalar**: canal como
+bucle exterior, banda Theta/Alpha/Beta/Gamma como interior. El orden es idéntico a
+`FEATURE_NAMES` y se compara con el runtime antes de procesar la primera ventana.
 
-Ejemplos:
+La receta provisional es suma de bins PSD con límites inclusivos, como en las
+celdas 0/1 del notebook; los bins fronterizos se comparten entre bandas.
+No es una integral, potencia relativa, ratio ni cambio porcentual respecto a REST.
+Welch fija explícitamente Hann periódica, detrend constante, PSD unilateral,
+`scaling='density'`, promedio mean y FFT del tamaño del segmento. Así se evita
+depender del nombre de la ventana por defecto de distintas versiones de SciPy.
+La [documentación de Welch](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.welch.html)
+describe estos parámetros. Una banda sin bins o resultado no finito produce error.
 
-- band power;
-- características temporales;
-- características espectrales;
-- ratios;
-- conectividad como PLV o coherencia.
+## unicorn_stream.py
+
+`UnicornSource` ofrece `discover()`, `connect()`, `read_samples(count)` y `close()`.
+`from_env()` solo construye la configuración; UnicornPy se importa al descubrir o
+conectar, exclusivamente en Windows. Sin SDK/dispositivo, con selección ambigua o
+con errores de lectura se lanza `AcquisitionError` descriptivo. No cambia la
+configuración del amplificador ni activa su señal de prueba.
+
+Se consultan los índices de los canales por nombre antes de iniciar adquisición,
+usando `GetChannelIndex`, y se leen todos los campos del scan float32 antes de
+seleccionar EEG. No se asume que los primeros ocho campos del buffer sean EEG.
+El API expone esa consulta y desconecta al liberar la instancia, según su
+[referencia oficial](https://github.com/unicorn-bi/Unicorn-Hybrid-Black-Windows-APIs/blob/main/python-api/unicorn-python-api-reference.md).
+Se conserva el handle de búsqueda de DLL durante la sesión y se libera al cerrar.
+`close()` intenta `StopAcquisition` y libera las referencias incluso si falla;
+los errores de cierre normal son visibles, sin ocultar una excepción previa.
+
+`SampleSource` es el protocolo inyectable. Sus lecturas devuelven
+`SampleBlock(samples, sample_rate, has_artifact=False)`, con entre 1 y `count` filas
+contiguas o una excepción; `close()` debe ser idempotente. `ArraySource` es finita,
+usa solo arrays en memoria y lanza `EOFError` al agotarse. No genera modelos.
+
+`with WindowStream(source, config=config, chunk_samples=25) as stream:` conecta y
+asegura cierre por salida, excepción o Ctrl+C. Cada `next_window()` acumula una
+ventana completa y conserva el solapamiento y las marcas de artefacto. No hay
+hilos, loops infinitos de fondo, archivos de datos ni reconexión automática.
+Una ventana final incompleta se descarta con `EOFError`; nunca se rellena.
+La frecuencia entregada por la fuente debe coincidir con la configuración.
+
+Limitaciones pendientes: el wrapper actual no interpreta Counter ni Validation
+Indicator ni verifica unidades físicas; esos campos auxiliares no entran al
+modelo. Hay que validar pérdidas/repeticiones de muestras y semántica de esos
+indicadores con el SDK instalado antes de usarlo para intervenciones reales.
+Una fuente con control adicional puede marcar `has_artifact=True`; esa marca
+invalida cada ventana afectada. `GetData` puede bloquear según el SDK; no se
+promete timeout ni cancelación instantánea de una llamada nativa.
+El tamaño del buffer se pasa en **bytes**, siguiendo `origin/master:datos.py`;
+la descripción pública del tercer argumento dice floats. Verificar este punto
+contra el ejemplo incluido en la versión instalada del SDK en Windows.
+
+## pipeline.py
+
+`EEGPipeline(runtime, config=..., quality=..., trigger=..., tutor=None)` conserva
+instancias de modelo y trigger durante la sesión. Su única operación es
+`process_window(window, sample_rate=..., signal_has_artifact=False)`.
+
+Devuelve `PipelineResult` con `features`, `model_probabilities`,
+`wavesense_probabilities`, `quality`, `decision` y `tutor_text` opcional.
+Si la ventana es inválida o tiene artefactos, características y probabilidades
+originales son `None`, Wavesense es ARTIFACT=1 y el trigger evalúa esa marca para
+romper la racha. El modelo y el tutor no se invocan. Un error posterior de
+filtrado/extracción/modelo rompe la racha y se propaga; no se inventa inferencia.
+El pipeline solo llama `Tutor.respond` para un `TriggerDecision` válido de
+HIGH_LOAD activado. No configura alertas visuales ni abre navegador/video.
+Para el uso sin UI, inyectar `Tutor` sin `visual_alert`.
+
+El procesamiento es síncrono: una llamada de tutor puede tardar y bloquear nuevas
+lecturas. Mantener tutor deshabilitado durante las primeras pruebas de hardware;
+una aplicación continua deberá separar lectura y tutor, gestionar backpressure,
+ventanas obsoletas y pérdidas, y crear una nueva sesión de trigger al reconectar.
+
+### Windows: preparación y una ventana real
+
+1. Instalar Unicorn Suite/UnicornPy mediante el fabricante, activar la licencia
+   correspondiente y emparejar el dispositivo. Usar Python >=3.10 compatible con
+   la versión/arquitectura del SDK y las dependencias del modelo. Confirmar estas
+   compatibilidades en el equipo; no se añade UnicornPy a `requirements.txt`.
+   Consultar la [guía oficial de instalación](https://github.com/unicorn-bi/Unicorn-Hybrid-Black-Windows-APIs/blob/main/python-api/unicorn-python-api.md).
+2. Desde la raíz, PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+# Solo si aún no tienes .env; conservar cualquier configuración local existente
+Copy-Item .env.example .env
+python -m unittest discover -s tests -v
+```
+
+3. Editar `.env`: apuntar `EEG_MODEL_PATH` y `EEG_SCALER_PATH` a los artefactos
+   locales de confianza (`./models/...` o las rutas reales). Configurar
+   `UNICORN_PYTHON_PATH` únicamente si hace falta: usar una ruta local entre
+   comillas, preferiblemente con `/`, nunca una ruta personal en código.
+   Confirmar nombres/orden físicos, bandas, referencia, unidades y límites de
+   calidad antes de conectar. `OPENAI_API_KEY` puede permanecer vacía.
+4. Tras esas verificaciones, ejecutar este código desde una aplicación local:
+
+```python
+from dotenv import load_dotenv
+from src.eeg_config import EEGConfig, QualityConfig
+from src.models import EEGModelRuntime
+from src.pipeline import EEGPipeline
+from src.triggering import TemporalTrigger
+from src.unicorn_stream import UnicornSource, WindowStream
+
+load_dotenv()
+config = EEGConfig.from_env()
+pipeline = EEGPipeline(
+    EEGModelRuntime.from_env(), config=config, quality=QualityConfig.from_env(),
+    trigger=TemporalTrigger(), tutor=None,
+)
+with WindowStream(UnicornSource.from_env(), config=config) as stream:
+    block = stream.next_window()  # Una ventana; conexión cerrada al salir.
+    result = pipeline.process_window(
+        block.samples, sample_rate=block.sample_rate,
+        signal_has_artifact=block.has_artifact,
+    )
+    print(result.quality, result.wavesense_probabilities, result.decision)
+```
+
+### Simulación sin SDK, modelos reales, OpenAI ni navegador
+
+Las pruebas de integración contienen fuente sintética y dobles en memoria; no se
+escriben `.pkl` sustitutos ni datasets. Ejecutar desde la raíz en Windows o Linux:
+
+```bash
+python -m unittest discover -s tests -p 'test_eeg_pipeline.py' -v
+python -m unittest discover -s tests -p 'test_unicorn_stream.py' -v
+```
+
+Para probar solo adquisición/extracción en memoria:
+
+```python
+import numpy as np
+from src.eeg_config import EEGConfig
+from src.features import extract_band_powers
+from src.preprocessing import filter_window
+from src.unicorn_stream import ArraySource, WindowStream
+
+config = EEGConfig()
+time = np.arange(config.window_samples) / config.sample_rate
+samples = np.sin(2 * np.pi * 10 * time[:, None]) * np.arange(1, 9)
+with WindowStream(ArraySource(samples, sample_rate=250), config=config) as stream:
+    block = stream.next_window()
+    filtered = filter_window(block.samples, sample_rate=block.sample_rate, config=config)
+    print(extract_band_powers(filtered, sample_rate=block.sample_rate, config=config))
+```
+
+Estos senos son estímulos de prueba de software, no grabaciones EEG ni una
+validación de las probabilidades de un clasificador.
 
 ## models.py
 
@@ -89,7 +288,8 @@ observed_names = tuple(
 Primero las cuatro bandas de Canal_1, luego Canal_2, hasta Canal_8. Las clases
 observadas, en orden, son `BRAWL_STARS`, `DIBUJANDO`, `MATH_LOAD`, `REST`,
 `SUBWAY_SURFERS`. Estos datos describen los artefactos inspeccionados, no se
-codifican como valores obligatorios para futuros modelos.
+codifican como valores obligatorios en el runtime genérico; este extractor sí
+requiere las 32 columnas exactas y rechaza otro esquema.
 
 El notebook `analisis_eeg.ipynb`, idéntico en la referencia local `origin/modelo`,
 muestra una extracción candidata: 250 Hz; Butterworth de orden 4 entre 1 y
@@ -100,6 +300,14 @@ con ventanas de 10 segundos. Su StandardScaler se presenta como normalización
 para visualización; no contiene el entrenamiento/exportación que vincule
 inequívocamente esa receta con ambos `.pkl`.
 
+La referencia `origin/master:datos.py` revisada usa 10 segundos, paso de 1 segundo,
+Welch de hasta 512 muestras, integra PSD con trapecios y restringe Gamma a 30–40 Hz.
+No se importó ni fusionó esa rama: su índice experimental no sustituye al vector
+que requiere el modelo. El default de paso de 1 segundo es una decisión provisional
+del runtime; el notebook usa un paso variable según la duración de cada CSV.
+El filtrado por ventana con SOS también difiere del filtrado de toda la grabación
+con `filtfilt` del notebook, particularmente en los bordes.
+
 Por tanto, **se conoce el esquema de 32 columnas, pero falta confirmar la receta
 de entrenamiento**: correspondencia física y unidades de Canal_1…Canal_8,
 ventana y paso usados, parámetros/versiones exactos de Welch y filtros, estado
@@ -108,12 +316,12 @@ sustituir la suma de bins por integrales, ratios o porcentajes de línea base si
 confirmarlo. La presencia de Gamma hasta 45 Hz junto al filtro hasta 40 Hz también
 debe reconciliarse con el entrenamiento. Los nombres no permiten resolverlo.
 
-El futuro módulo de adquisición/preprocesamiento/extracción deberá entregar una
-fila por ventana, con esas 32 potencias **antes del escalado externo**, una vez
-confirmada la receta. Debe adjuntar los nombres reales de extracción o construir
+El extractor implementado entrega una fila por ventana con esas 32 potencias
+**antes del escalado externo**, usando la receta provisional configurable. El
+equipo debe confirmar la receta para habilitar el uso real. Debe adjuntar los nombres reales de extracción o construir
 un DataFrame en ese orden; copiar `runtime.feature_names` como etiqueta de valores
 desconocidos no valida su significado. El indicador de artefacto viajará separado
-al adaptador. Este módulo no adquiere Unicorn, filtra, extrae características,
+al adaptador. `models.py` no adquiere Unicorn, filtra, extrae características,
 decide triggers ni llama al tutor/OpenAI.
 
 ### Uso local
@@ -148,8 +356,8 @@ Para un array proporcionado por el extractor:
 `output = runtime.predict_proba(vector, feature_names=nombres_del_extractor)`.
 Para varias ventanas, usar `predict_proba_batch` y aplicar el adaptador a cada
 salida con el indicador de calidad correspondiente. Reutilizar la instancia;
-no cargar los archivos en cada ventana. El CSV del ejemplo debe producirlo el
-extractor futuro: no se proporciona un vector inventado ni se ejecuta el notebook.
+no cargar los archivos en cada ventana. El CSV del ejemplo debe producirlo una aplicación externa a partir del
+extractor confirmado: no se proporciona un vector inventado ni se ejecuta el notebook.
 
 ## triggering.py
 
