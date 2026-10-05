@@ -1,7 +1,135 @@
 """
 Temporal intervention decision utilities for Wavesense-IDMs.
 
-Confidence thresholds, persistence across windows and trigger cooldown.
+This module decides whether a sustained local model prediction should
+produce a tutor intervention. It is independent from EEG processing,
+machine-learning models and the OpenAI API.
 """
 
-# TODO: Define temporal rules before implementing intervention decisions.
+from __future__ import annotations
+
+from dataclasses import dataclass
+from time import monotonic
+from typing import Callable, Mapping
+
+
+@dataclass(frozen=True)
+class TriggerConfig:
+    """Configurable rules for temporal intervention triggering."""
+
+    high_load_threshold: float = 0.82
+    required_consecutive_windows: int = 3
+    artifact_threshold: float = 0.50
+    cooldown_seconds: float = 30.0
+
+
+@dataclass(frozen=True)
+class TriggerDecision:
+    """Result of evaluating one prediction window."""
+
+    triggered: bool
+    reason: str
+    state: str
+    confidence: float
+    consecutive_high_load_windows: int
+    cooldown_remaining_seconds: float
+
+
+class TemporalTrigger:
+    """Tracks temporal state and decides when an intervention is valid."""
+
+    def __init__(
+        self,
+        config: TriggerConfig | None = None,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self.config = config or TriggerConfig()
+        self._clock = clock
+        self._consecutive_high_load_windows = 0
+        self._last_trigger_time: float | None = None
+
+    def evaluate(self, probabilities: Mapping[str, float]) -> TriggerDecision:
+        """
+        Evaluate one local-model prediction window.
+
+        Expected states are REST, LOW_LOAD, HIGH_LOAD and ARTIFACT.
+        """
+        state, confidence = max(probabilities.items(), key=lambda item: item[1])
+        artifact_confidence = probabilities.get("ARTIFACT", 0.0)
+        now = self._clock()
+
+        cooldown_remaining = self._cooldown_remaining(now)
+        if cooldown_remaining > 0:
+            self._consecutive_high_load_windows = 0
+            return self._decision(
+                triggered=False,
+                reason="cooldown_active",
+                state=state,
+                confidence=confidence,
+                cooldown_remaining=cooldown_remaining,
+            )
+
+        if state == "ARTIFACT" or artifact_confidence >= self.config.artifact_threshold:
+            self._consecutive_high_load_windows = 0
+            return self._decision(
+                triggered=False,
+                reason="artifact_detected",
+                state=state,
+                confidence=confidence,
+            )
+
+        high_load_confidence = probabilities.get("HIGH_LOAD", 0.0)
+        if high_load_confidence < self.config.high_load_threshold:
+            self._consecutive_high_load_windows = 0
+            return self._decision(
+                triggered=False,
+                reason="high_load_below_threshold",
+                state=state,
+                confidence=confidence,
+            )
+
+        self._consecutive_high_load_windows += 1
+
+        if self._consecutive_high_load_windows < self.config.required_consecutive_windows:
+            return self._decision(
+                triggered=False,
+                reason="waiting_for_persistence",
+                state=state,
+                confidence=confidence,
+            )
+
+        self._last_trigger_time = now
+        self._consecutive_high_load_windows = 0
+        return self._decision(
+            triggered=True,
+            reason="sustained_high_load",
+            state=state,
+            confidence=confidence,
+            cooldown_remaining=self.config.cooldown_seconds,
+        )
+
+    def _cooldown_remaining(self, now: float) -> float:
+        """Return remaining cooldown time, or zero when it has expired."""
+        if self._last_trigger_time is None:
+            return 0.0
+
+        elapsed = now - self._last_trigger_time
+        return max(0.0, self.config.cooldown_seconds - elapsed)
+
+    def _decision(
+        self,
+        *,
+        triggered: bool,
+        reason: str,
+        state: str,
+        confidence: float,
+        cooldown_remaining: float = 0.0,
+    ) -> TriggerDecision:
+        return TriggerDecision(
+            triggered=triggered,
+            reason=reason,
+            state=state,
+            confidence=confidence,
+            consecutive_high_load_windows=self._consecutive_high_load_windows,
+            cooldown_remaining_seconds=round(cooldown_remaining, 2),
+        )
