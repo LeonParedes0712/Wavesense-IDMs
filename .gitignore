@@ -28,6 +28,7 @@ Thumbs.db
 # Secrets and environment variables
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 

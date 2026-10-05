@@ -1,4 +1,6 @@
+import os
 import unittest
+from unittest.mock import patch
 
 from src.triggering import TemporalTrigger, TriggerConfig
 
@@ -40,6 +42,23 @@ class TemporalTriggerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.clock = FakeClock()
         self.trigger = TemporalTrigger(clock=self.clock)
+
+    def test_config_reads_values_from_environment(self) -> None:
+        environment = {
+            "HIGH_LOAD_THRESHOLD": "0.75",
+            "REQUIRED_CONSECUTIVE_WINDOWS": "4",
+            "ARTIFACT_THRESHOLD": "0.60",
+            "COOLDOWN_SECONDS": "45",
+        }
+
+        with patch("src.triggering.load_dotenv"):
+            with patch.dict(os.environ, environment, clear=True):
+                config = TriggerConfig.from_env()
+
+        self.assertEqual(config.high_load_threshold, 0.75)
+        self.assertEqual(config.required_consecutive_windows, 4)
+        self.assertEqual(config.artifact_threshold, 0.60)
+        self.assertEqual(config.cooldown_seconds, 45.0)
 
     def test_one_high_load_window_does_not_trigger(self) -> None:
         decision = self.trigger.evaluate(VALID_HIGH_LOAD)
