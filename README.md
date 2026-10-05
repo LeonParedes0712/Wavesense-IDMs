@@ -65,6 +65,26 @@ Con el entorno activo, ejecutar `pip install -r requirements.txt`. Las dependenc
 
 Para habilitar llamadas reales del tutor, configurar `OPENAI_API_KEY` en el entorno o en un `.env` local ignorado por Git, y elegir explícitamente el modelo al crear `Tutor`. `.env.example` contiene solo un placeholder vacío. Importar el tutor o ejecutar `python -m src.tutor` no llama a la API ni abre ventanas.
 
+## Ejecutar directamente datos.py
+
+Para usar el proceso del archivo `datos.py` aportado por el equipo:
+
+```powershell
+python main.py
+```
+
+`main.py` llama una sola vez a `datos.main()`: selección del dispositivo,
+baseline inicial de 20 segundos y análisis continuo del canal original sobre
+ventanas de 10 segundos, actualizado cada segundo. Ctrl+C termina la sesión.
+No crea `UnicornSource`, otro pipeline ni otra sesión de adquisición.
+El baseline se repite únicamente al iniciar una nueva ejecución.
+
+Configurar `UNICORN_PYTHON_PATH` en `.env` con la carpeta local del SDK si no está
+accesible. Requiere Windows, Python de 64 bits compatible con UnicornPy,
+Unicorn Suite y licencia activas. El archivo en Descargas permanece intacto;
+la copia del repositorio conserva el análisis original y carga el SDK al ejecutar.
+El diagnóstico breve `scripts/unicorn_smoke_test.py` sigue disponible.
+
 ## Pipeline EEG en Windows y simulación
 
 En PowerShell, desde la raíz (con Python compatible con el SDK de Unicorn):
