@@ -1,0 +1,9 @@
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+mne
+networkx
+jupyter
+python-dotenv
