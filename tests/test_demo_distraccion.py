@@ -1,5 +1,6 @@
 import contextlib
 import io
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -10,9 +11,17 @@ from scripts import demo_distraccion as demo
 
 
 class DistractionDemoTests(unittest.TestCase):
+    def setUp(self):
+        self.browser = self.enterContext(patch('webbrowser.open', return_value=True))
+        self.enterContext(patch.dict(os.environ, {
+            'DISTRACTION_VIDEO_URL': 'https://www.tiktok.com/'
+        }))
+
     def test_complete_session_uses_datos_and_emits_one_event_per_cycle(self):
         output = io.StringIO()
         sleep = Mock()
+        opening_times = []
+        self.browser.side_effect = lambda url: opening_times.append(sleep.call_count) or True
         with contextlib.redirect_stdout(output), \
              patch.object(demo.datos, 'calcular_bandas', wraps=demo.datos.calcular_bandas) as analyze:
             demo.run(cycles=2, sleep=sleep)
@@ -26,6 +35,37 @@ class DistractionDemoTests(unittest.TestCase):
         self.assertEqual(len(analyze.call_args_list[0].args[0]), 5000)
         self.assertTrue(all(len(call.args[0]) == 2500 for call in analyze.call_args_list[1:]))
         self.assertEqual(sleep.call_count, 140)
+        self.assertEqual(opening_times, [43, 103])  # Primer evento: 43 / 5 = 8.6 s.
+        self.assertEqual(self.browser.call_count, 2)
+        self.browser.assert_called_with('https://www.tiktok.com/')
+
+    def test_browser_failure_does_not_stop_demo(self):
+        for result in (False, RuntimeError('browser failed')):
+            with self.subTest(result=result):
+                self.browser.reset_mock(side_effect=True)
+                if isinstance(result, Exception):
+                    self.browser.side_effect = result
+                else:
+                    self.browser.return_value = result
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    demo.run(cycles=1, sleep=Mock())
+                self.assertIn('No se pudo abrir', output.getvalue())
+                self.assertIn('Sesión finalizada', output.getvalue())
+                self.browser.assert_called_once()
+
+    def test_missing_url_keeps_running_without_browser(self):
+        with patch.dict(os.environ, {'DISTRACTION_VIDEO_URL': ''}), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            demo.run(cycles=1, sleep=Mock())
+        self.browser.assert_not_called()
+        self.assertIn('Configura DISTRACTION_VIDEO_URL', output.getvalue())
+        self.assertIn('Sesión finalizada', output.getvalue())
+
+    def test_main_loads_repo_dotenv(self):
+        with patch('dotenv.load_dotenv') as load, patch.object(demo, 'run') as run:
+            self.assertEqual(demo.main(['--cycles', '1']), 0)
+        load.assert_called_once_with(Path(demo.__file__).resolve().parents[1] / '.env')
+        run.assert_called_once_with(speed=5, cycles=1)
 
     def test_invalid_options_rejected(self):
         for speed in (0, -1, float('nan'), float('inf')):

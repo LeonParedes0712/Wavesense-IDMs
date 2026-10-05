@@ -100,7 +100,17 @@ de distracción. Ese evento pertenece al guion; no es una detección EEG real.
 Por defecto corre a velocidad x5 y repite hasta Ctrl+C; el primer evento aparece
 aproximadamente a los 9 segundos de reloj. Para velocidad normal, usar `--speed 1`.
 Para terminar automáticamente tras un ciclo, añadir `--cycles 1`.
-No requiere dispositivo, SDK, modelo ni `.env`, y no llama servicios externos.
+Al emitir **Se distrajo**, abre el enlace de TikTok configurado en `.env` con el
+navegador predeterminado, una vez por fase de distracción:
+
+```env
+DISTRACTION_VIDEO_URL=https://www.tiktok.com/
+```
+
+Puede usarse el enlace de un video específico. Las variables de entorno tienen
+prioridad sobre `.env`. Si falta el enlace o falla el navegador, informa el error
+y continúa la simulación. No requiere dispositivo, SDK ni modelo; no usa OpenAI.
+La apertura del enlace no garantiza reproducción automática del video.
 
 ## Pipeline EEG en Windows y simulación
 

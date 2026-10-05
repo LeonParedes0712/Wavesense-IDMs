@@ -12,6 +12,7 @@ if __package__ in (None, ''):
 
 import numpy as np
 import datos
+from src.tools.distraction_video import open_distraction_video
 
 
 # Cada fase dura 20 segundos de señal, no de reloj en modo acelerado.
@@ -77,6 +78,13 @@ def run(*, speed=5.0, cycles=0, sleep=time.sleep):
                 print(f'[DEMO] Distracción programada pendiente: {phase_second}/3 actualizaciones.', flush=True)
             elif phase_second == 3:
                 print('[DEMO SIMULADA] Se distrajo. Evento programado, no detección real.', flush=True)
+                try:
+                    if open_distraction_video():
+                        print('[DEMO] TikTok: apertura solicitada al navegador.', flush=True)
+                    else:
+                        print('[DEMO] No se pudo abrir el navegador para TikTok.', flush=True)
+                except Exception as exc:
+                    print(f'[DEMO] No se pudo abrir TikTok: {exc}', flush=True)
             else:
                 print('[DEMO] Continúa la fase de distracción; evento ya emitido.', flush=True)
         else:
@@ -89,6 +97,8 @@ def main(argv=None):
     parser.add_argument('--speed', type=float, default=5, help='Velocidad: 1=tiempo real, 5=demo rápida (default).')
     parser.add_argument('--cycles', type=int, default=0, help='Ciclos de 60 s simulados; 0=continuo (default).')
     args = parser.parse_args(argv)
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[1] / '.env')
     try:
         run(speed=args.speed, cycles=args.cycles)
     except KeyboardInterrupt:
