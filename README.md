@@ -85,6 +85,23 @@ Unicorn Suite y licencia activas. El archivo en Descargas permanece intacto;
 la copia del repositorio conserva el análisis original y carga el SDK al ejecutar.
 El diagnóstico breve `scripts/unicorn_smoke_test.py` sigue disponible.
 
+## Demostración continua sin Unicorn
+
+```powershell
+python scripts/demo_distraccion.py
+```
+
+Genera señal sintética y reutiliza `calcular_bandas` y `generar_conclusion` de
+`datos.py`. Incluye baseline de 20 segundos simulados, ventanas móviles de
+10 segundos y fases de atención, distracción y recuperación. Muestra bandas,
+índice, cambio respecto al baseline y el evento **Se distrajo** una vez por fase
+de distracción. Ese evento pertenece al guion; no es una detección EEG real.
+
+Por defecto corre a velocidad x5 y repite hasta Ctrl+C; el primer evento aparece
+aproximadamente a los 9 segundos de reloj. Para velocidad normal, usar `--speed 1`.
+Para terminar automáticamente tras un ciclo, añadir `--cycles 1`.
+No requiere dispositivo, SDK, modelo ni `.env`, y no llama servicios externos.
+
 ## Pipeline EEG en Windows y simulación
 
 En PowerShell, desde la raíz (con Python compatible con el SDK de Unicorn):
