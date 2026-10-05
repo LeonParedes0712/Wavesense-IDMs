@@ -6,3 +6,4 @@ matplotlib
 mne
 networkx
 jupyter
+python-dotenv

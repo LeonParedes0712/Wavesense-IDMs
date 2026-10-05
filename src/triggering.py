@@ -8,9 +8,36 @@ machine-learning models and the OpenAI API.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from time import monotonic
 from typing import Callable, Mapping
+
+from dotenv import load_dotenv
+
+
+def _read_float_from_env(name: str, default: float) -> float:
+    """Read a float environment variable or return its default value."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    try:
+        return float(value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a number, not {value!r}.") from error
+
+
+def _read_int_from_env(name: str, default: int) -> int:
+    """Read an integer environment variable or return its default value."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    try:
+        return int(value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer, not {value!r}.") from error
 
 
 @dataclass(frozen=True)
@@ -21,6 +48,31 @@ class TriggerConfig:
     required_consecutive_windows: int = 3
     artifact_threshold: float = 0.50
     cooldown_seconds: float = 30.0
+
+    @classmethod
+    def from_env(cls) -> "TriggerConfig":
+        """Create configuration from local environment variables."""
+        load_dotenv()
+        defaults = cls()
+
+        return cls(
+            high_load_threshold=_read_float_from_env(
+                "HIGH_LOAD_THRESHOLD",
+                defaults.high_load_threshold,
+            ),
+            required_consecutive_windows=_read_int_from_env(
+                "REQUIRED_CONSECUTIVE_WINDOWS",
+                defaults.required_consecutive_windows,
+            ),
+            artifact_threshold=_read_float_from_env(
+                "ARTIFACT_THRESHOLD",
+                defaults.artifact_threshold,
+            ),
+            cooldown_seconds=_read_float_from_env(
+                "COOLDOWN_SECONDS",
+                defaults.cooldown_seconds,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -43,7 +95,7 @@ class TemporalTrigger:
         config: TriggerConfig | None = None,
         clock: Callable[[], float] = monotonic,
     ) -> None:
-        self.config = config or TriggerConfig()
+        self.config = config or TriggerConfig.from_env()
         self._clock = clock
         self._consecutive_high_load_windows = 0
         self._last_trigger_time: float | None = None
