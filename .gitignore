@@ -28,6 +28,7 @@ Thumbs.db
 # Secrets and environment variables
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 
@@ -86,3 +87,7 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# Artefactos EEG locales en la raíz del repositorio
+/*.csv
+/*.pkl
