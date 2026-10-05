@@ -87,3 +87,7 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# Artefactos EEG locales en la raíz del repositorio
+/*.csv
+/*.pkl
