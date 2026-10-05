@@ -85,6 +85,32 @@ Se utiliza `responses.create` del [SDK oficial de OpenAI](https://developers.ope
 
 `show_visual_alert(text)` muestra texto en un diálogo local y requiere Tk y una sesión gráfica. Está aislada y desactivada por defecto. La aplicación puede habilitarla explícitamente con `Tutor(model=..., visual_alert=show_visual_alert)`; se ejecuta únicamente después de obtener ayuda para un trigger válido. No abre el navegador. Las pruebas sustituyen la interfaz gráfica por mocks.
 
+## tools/distraction_video.py
+
+`open_distraction_video()` abre el video configurado en `DISTRACTION_VIDEO_URL`
+en el navegador predeterminado. El equipo debe configurar este enlace no secreto
+en el entorno o en su `.env` local, cargado por la aplicación. Si falta o está
+vacío, lanza `RuntimeError` sin abrir nada. Devuelve el resultado de
+`webbrowser.open` (un booleano que indica si se pudo iniciar el navegador).
+Importar la herramienta no abre el navegador.
+
+El tutor no invoca esta herramienta y OpenAI no la recibe ni decide ejecutarla.
+La aplicación puede llamarla explícitamente solo después de recibir texto:
+
+```python
+from src.tools.distraction_video import open_distraction_video
+
+# decision proviene de la instancia persistente de TemporalTrigger.
+text = tutor.respond(decision)
+if text:
+    # Llamada opcional, habilitada por la aplicación según su política.
+    open_distraction_video()
+```
+
+No pasar esta función como `visual_alert` del tutor ni registrarla como herramienta
+del LLM. La alerta de video es una acción separada y explícita de la aplicación.
+Las pruebas simulan el navegador y no abren TikTok.
+
 ## Important
 
 No agregar código experimental desorganizado aquí.
