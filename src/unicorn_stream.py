@@ -32,11 +32,18 @@ class SampleSource(Protocol):
 class UnicornSource:
     """Usar dentro de WindowStream o llamar close() en finally.
 
-    Sin importación de UnicornPy hasta discover/connect. UNICORN_EEG_CHANNEL_NAMES define
-    el orden físico entregado como Canal_1..8, no una selección por posición.
+    Sin importación de UnicornPy hasta discover/connect. Por defecto selecciona
+    EEG 1..8 por nombre. Se conserva channel_names y su variable de entorno
+    histórica por compatibilidad. channel_diagnostics expone los índices antes
+    de StartAcquisition. Las lecturas SDK usan siempre frame_length muestras.
     """
 
-    def __init__(self, *, serial=None, python_path=None, channel_names=None):
+    def __init__(self, *, serial=None, python_path=None, channel_names=None, frame_length=25):
+        if not isinstance(frame_length, int) or isinstance(frame_length, bool) or frame_length <= 0:
+            raise ValueError("frame_length debe ser un entero positivo.")
+        self.frame_length = frame_length
+        self._pending = np.empty((0, 8), dtype=np.float32)
+        self.channel_diagnostics = ()
         self.serial = serial
         self.python_path = python_path
         self.channel_names = tuple((f'EEG {i}' for i in range(1, 9))
@@ -56,6 +63,7 @@ class UnicornSource:
         names = os.getenv('UNICORN_EEG_CHANNEL_NAMES', '').strip()
         return cls(serial=os.getenv('UNICORN_SERIAL', '').strip() or None,
                    python_path=os.getenv('UNICORN_PYTHON_PATH', '').strip() or None,
+                   frame_length=int(os.getenv('UNICORN_FRAME_LENGTH', '25')),
                    channel_names=tuple(n.strip() for n in names.split(',')) if names else None)
 
     def _load_sdk(self):
@@ -88,6 +96,8 @@ class UnicornSource:
                 sys.path.remove(added_path)
 
     def discover(self):
+        if self._started:
+            raise AcquisitionError('No se permite descubrir dispositivos durante adquisición.')
         sdk = self._load_sdk()
         try:
             return list(sdk.GetAvailableDevices(True) or [])
@@ -117,6 +127,10 @@ class UnicornSource:
             if (len(set(self._indices)) != 8
                     or any(i < 0 or i >= self._channel_count for i in self._indices)):
                 raise AcquisitionError('Revisa canales EEG habilitados y UNICORN_EEG_CHANNEL_NAMES.')
+            self.serial = serial
+            self.channel_diagnostics = tuple(zip(self.channel_names, self._indices))
+            self._buffer_length = self.frame_length * self._channel_count * 4
+            self._buffer = bytearray(self._buffer_length)
             # Marcar antes de Start para intentar Stop incluso si el SDK falla a medio inicio.
             self._started = True
             self._device.StartAcquisition(False)
@@ -132,12 +146,19 @@ class UnicornSource:
         if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
             raise ValueError('count debe ser un entero positivo.')
         try:
-            size = count * self._channel_count * np.dtype(np.float32).itemsize
-            if len(self._buffer) != size:
-                self._buffer = bytearray(size)
-            self._device.GetData(count, self._buffer, size)
-            scans = np.frombuffer(self._buffer, dtype=np.float32).reshape(count, self._channel_count)
-            return SampleBlock(scans[:, self._indices].copy(), self.sample_rate)
+            parts = []
+            remaining = count
+            while remaining:
+                if not len(self._pending):
+                    self._device.GetData(self.frame_length, self._buffer, self._buffer_length)
+                    scans = np.frombuffer(self._buffer, dtype=np.float32).reshape(
+                        self.frame_length, self._channel_count)
+                    self._pending = scans[:, self._indices].copy()
+                take = min(remaining, len(self._pending))
+                parts.append(self._pending[:take])
+                self._pending = self._pending[take:]
+                remaining -= take
+            return SampleBlock(np.concatenate(parts), self.sample_rate)
         except BaseException as exc:
             self._close_after_error()
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
@@ -162,6 +183,7 @@ class UnicornSource:
         finally:
             # UnicornPy desconecta al destruir la instancia; no expone Disconnect.
             device = None
+            self._pending = np.empty((0, 8), dtype=np.float32)
             self._buffer = bytearray()
             self.sample_rate = None
             self._sdk = None

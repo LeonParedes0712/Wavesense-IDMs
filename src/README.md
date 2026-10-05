@@ -45,7 +45,7 @@ la aplicación llama `load_dotenv()` explícitamente. No lee `.env` al importar.
 | `EEG_MAX_ABS`, `EEG_MAX_STEP` | Vacíos: desactivados. Límites positivos de amplitud absoluta y diferencia entre muestras, en las unidades de entrada |
 | `UNICORN_PYTHON_PATH` | Vacío si el SDK ya es accesible; de otro modo carpeta local `Lib` con UnicornPy y sus DLL |
 | `UNICORN_SERIAL` | Vacío permite conectar solo si hay exactamente un dispositivo disponible |
-| `UNICORN_EEG_CHANNEL_NAMES` | `EEG 1,...,EEG 8`; su orden determina Canal_1…Canal_8 |
+| `UNICORN_FRAME_LENGTH` | `25`; muestras por bloque SDK, con buffer persistente |
 
 Las duraciones multiplicadas por la frecuencia deben ser enteros positivos, el
 paso no puede exceder la ventana y las bandas/filtro deben estar bajo Nyquist.
@@ -89,11 +89,20 @@ describe estos parámetros. Una banda sin bins o resultado no finito produce err
 
 ## unicorn_stream.py
 
+Primero ejecutar `python scripts/unicorn_smoke_test.py` en Windows desde la raíz.
+Este diagnóstico no importa la arquitectura del pipeline ni requiere modelos.
+Usar Python de 64 bits compatible con UnicornPy, Unicorn Suite y licencia activas.
+
 `UnicornSource` ofrece `discover()`, `connect()`, `read_samples(count)` y `close()`.
 `from_env()` solo construye la configuración; UnicornPy se importa al descubrir o
 conectar, exclusivamente en Windows. Sin SDK/dispositivo, con selección ambigua o
 con errores de lectura se lanza `AcquisitionError` descriptivo. No cambia la
 configuración del amplificador ni activa su señal de prueba.
+
+`frame_length` vale 25 por defecto. El buffer se reserva antes de iniciar y mantiene
+`frame_length * canales_adquiridos * 4` bytes. `read_samples(count)` conserva
+sobrantes entre llamadas sin cambiar el tamaño de lectura SDK.
+`channel_diagnostics` expone pares (nombre, índice) antes de iniciar adquisición.
 
 Se consultan los índices de los canales por nombre antes de iniciar adquisición,
 usando `GetChannelIndex`, y se leen todos los campos del scan float32 antes de

@@ -86,15 +86,56 @@ python -m unittest discover -s tests -p 'test_eeg_pipeline.py' -v
 python -m unittest discover -s tests -p 'test_unicorn_stream.py' -v
 ```
 
-Para hardware, instalar Unicorn Suite/UnicornPy y su licencia manualmente en
-Windows, emparejar el dispositivo y confirmar arquitectura/versiones de Python y
-DLL. No se instala UnicornPy mediante `requirements.txt`. En `.env`, configurar:
+Primero ejecutar el diagnóstico independiente, sin modelo ni pipeline. Requiere
+Windows, Python **de 64 bits compatible con la versión instalada de UnicornPy**,
+Unicorn Suite y licencia activas, y el dispositivo encendido y emparejado.
+UnicornPy se instala con el SDK, no mediante `requirements.txt`. Para el diagnóstico
+bastan `numpy` y `python-dotenv`, además del SDK.
 
-- `EEG_MODEL_PATH=./models/modelo_eeg_unicorn.pkl` y
-  `EEG_SCALER_PATH=./models/escalador_eeg.pkl`, o sus rutas locales reales.
-- `UNICORN_PYTHON_PATH`: carpeta `Lib` del SDK solo cuando no sea accesible.
-- `UNICORN_SERIAL`: selección explícita si hay más de un dispositivo.
-- `UNICORN_EEG_CHANNEL_NAMES`: nombres SDK en el orden físico de Canal_1…Canal_8.
+Configurar en `.env` (o como variables de entorno, que tienen prioridad):
+
+```env
+UNICORN_PYTHON_PATH=
+UNICORN_SERIAL=
+UNICORN_FRAME_LENGTH=25
+```
+
+`UNICORN_PYTHON_PATH` es la carpeta local que contiene UnicornPy y sus DLL;
+puede quedar vacía si ya son accesibles. Un único dispositivo se selecciona
+solo; con varios, `UNICORN_SERIAL` debe identificar uno de los seriales disponibles.
+`UNICORN_FRAME_LENGTH` configura `UnicornSource`; el diagnóstico siempre lee
+10 bloques de 25 muestras siguiendo `origin/master:datos.py`.
+
+Desde la raíz del repositorio, en PowerShell:
+
+```powershell
+python scripts/unicorn_smoke_test.py
+```
+
+Debe mostrar versión de API (si existe), serial, `SamplingRate`, cantidad de
+canales adquiridos e índices EEG. Después aparecen diez matrices de forma
+`(25, número_de_canales_adquiridos)`, sus mínimos/máximos y las primeras tres
+muestras de los primeros ocho campos. El número de canales puede ser mayor que
+ocho. El SDK se detiene en `finally`, también ante un error de lectura.
+Los valores impresos permiten comprobar recepción; no certifican calidad EEG.
+**El hardware sigue sin validarse hasta ejecutar este diagnóstico en Windows.**
+La integración con el modelo queda pendiente; el ejemplo siguiente es posterior
+al diagnóstico de adquisición.
+
+Para adquisición continua, reutilizando `UnicornSource` y la misma configuración:
+
+```powershell
+python scripts/run_unicorn_pipeline.py
+```
+
+Lee hasta pulsar **Ctrl+C**, muestra serial, frecuencia e índices EEG al inicio y
+un resumen del último bloque aproximadamente cada segundo (también el primero).
+No acumula la sesión en memoria. Cierra la fuente en `finally`, también ante un
+error, y devuelve un código distinto de cero si falla. La configuración de
+`UNICORN_FRAME_LENGTH` determina el tamaño de cada lectura. Este ejecutable se
+limita por ahora a adquisición: no carga modelo, escalador, tutor ni navegador.
+Conservar `scripts/unicorn_smoke_test.py` como diagnóstico breve si falla la sesión.
+La ejecución física continua en Windows sigue pendiente de validación.
 
 El ejemplo de [una ventana real y cierre seguro](src/README.md#windows-preparación-y-una-ventana-real)
 está en `src/README.md`, junto con el ejemplo `ArraySource` en memoria. El pipeline
