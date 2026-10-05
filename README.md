@@ -8,7 +8,7 @@ El proyecto consiste en un sistema de aprendizaje inteligente que evalúa la act
 
 Para maximizar la eficiencia y reducir drásticamente el consumo de tokens y costos de API, el modelo local actúa como un "guardián": solo cuando la carga mental del estudiante cruza un umbral crítico determinado, el sistema dispara una llamada a la API de ChatGPT. El LLM recibe el estado fisiológico actual como contexto y adapta dinámicamente la estrategia pedagógica (explicaciones más simples, cambio de tema o pausas sugeridas) exactamente cuando el usuario lo necesita.
 
-La descripción anterior expresa la visión del proyecto. En esta etapa existen la estructura base y plantillas sin lógica real del prototipo de hackathon; todavía no hay adquisición, procesamiento, modelos entrenados ni integración con un LLM. El MVP comenzará con modelos clásicos como Logistic Regression, SVM o Random Forest. Una GNN queda como exploración posterior.
+La descripción anterior expresa la visión del proyecto. Ya existen el adaptador de probabilidades, las reglas temporales y una integración del tutor con OpenAI, con pruebas sin servicios externos. La adquisición y el procesamiento reutilizables siguen pendientes; no hay modelos entrenados validados en este repositorio. El MVP comenzará con modelos clásicos como Logistic Regression, SVM o Random Forest. Una GNN queda como exploración posterior.
 
 ## System Architecture
 
@@ -23,7 +23,7 @@ EEG acquisition
 → adaptive tutor
 ```
 
-La decisión temporal considerará confianza, persistencia durante varias ventanas y un intervalo mínimo entre intervenciones (cooldown). Una predicción aislada no debería activar automáticamente al tutor. Solo un trigger válido enviará contexto al LLM.
+`TemporalTrigger` considera confianza, persistencia durante varias ventanas, artefactos y un intervalo mínimo entre intervenciones (cooldown). El tutor recibe su `TriggerDecision` y solo llama a OpenAI cuando `triggered=True` y el estado es `HIGH_LOAD`. Envía únicamente estado y confianza, sin EEG crudo. Consulta la [interfaz de integración](src/README.md#tutorpy).
 
 ## Repository Structure
 
@@ -37,9 +37,9 @@ La decisión temporal considerará confianza, persistencia durante varias ventan
 | `results/figures/` | Visualizaciones de experimentos. |
 | `results/metrics/` | Métricas de evaluación. |
 | `docs/` | Arquitectura, especificaciones de hardware y protocolo experimental. |
-| `tests/` | Futuras pruebas del código reutilizable. |
+| `tests/` | Pruebas del adaptador, triggering y tutor, sin llamadas externas. |
 
-Cada carpeta incluye su README. Se incluyen módulos Python con docstrings y TODO, notebooks sin análisis, dependencias iniciales y `.gitignore`. Los documentos técnicos se encuentran en `docs/`.
+Cada carpeta incluye su README. Los módulos de adquisición, procesamiento y modelos aún contienen plantillas. Los documentos técnicos se encuentran en `docs/`.
 
 ## Initial Classification Goal
 
@@ -61,7 +61,9 @@ cd Wavesense-IDMs
 
 Todavía no hay un pipeline ejecutable. Para preparar el entorno de desarrollo, crear un entorno con `python -m venv .venv` (o `python3`, según la instalación). Se activa con `source .venv/bin/activate` en Linux/macOS, `.venv\Scripts\Activate.ps1` en PowerShell o `.venv\Scripts\activate.bat` en Windows CMD.
 
-Con el entorno activo, ejecutar `pip install -r requirements.txt`. Las dependencias iniciales son NumPy, pandas, SciPy, scikit-learn, Matplotlib, MNE, NetworkX y Jupyter.
+Con el entorno activo, ejecutar `pip install -r requirements.txt`. Las dependencias incluyen NumPy, pandas, SciPy, scikit-learn, Matplotlib, MNE, NetworkX, Jupyter, python-dotenv y el SDK de OpenAI.
+
+Para habilitar llamadas reales del tutor, configurar `OPENAI_API_KEY` en el entorno o en un `.env` local ignorado por Git, y elegir explícitamente el modelo al crear `Tutor`. `.env.example` contiene solo un placeholder vacío. Importar el tutor o ejecutar `python -m src.tutor` no llama a la API ni abre ventanas.
 
 ## Development Workflow
 
@@ -96,4 +98,4 @@ El `.gitignore` excluye datasets, modelos, resultados generados, secretos, cach�
 
 ## Project Status
 
-Etapa inicial de un prototipo de hackathon. Se han preparado carpetas, documentación, dependencias y plantillas sin lógica real. Quedan pendientes la confirmación del hardware, el protocolo y las etiquetas, así como la implementación y validación del pipeline. No hay resultados experimentales ni rendimiento demostrado.
+Etapa inicial de un prototipo de hackathon. El flujo adaptador → triggering → tutor tiene implementación y pruebas unitarias; el pipeline EEG completo sigue pendiente de integración y validación. También quedan pendientes la confirmación del hardware, el protocolo y las etiquetas. No hay resultados experimentales ni rendimiento demostrado.
