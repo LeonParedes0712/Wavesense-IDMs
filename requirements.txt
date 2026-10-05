@@ -8,3 +8,4 @@ networkx
 jupyter
 python-dotenv
 openai>=1.66.0
+joblib
