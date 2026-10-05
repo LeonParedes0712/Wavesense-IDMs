@@ -1,8 +1,14 @@
 # Tests
 
-> Estado inicial: esta carpeta contiene únicamente documentación. Los archivos, datos y funcionalidades descritos son trabajo futuro.
+Esta carpeta contiene pruebas unitarias del adaptador, triggering y tutor, incluyendo el flujo integrado de probabilidades a intervención.
 
-Esta carpeta estará destinada a pruebas automáticas del código contenido en `src/`.
+Ejecutar desde la raíz del repositorio:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Las pruebas del tutor usan clientes y alertas simulados; no requieren API key ni hacen llamadas reales a OpenAI o al navegador. Verifican persistencia, umbral, artefactos, cooldown, contexto mínimo, configuración y ausencia de efectos al cargar o ejecutar el tutor.
 
 A medida que el proyecto madure podrán agregarse pruebas para:
 
@@ -13,8 +19,6 @@ A medida que el proyecto madure podrán agregarse pruebas para:
 - validación de inputs;
 - triggering;
 - construcción de payloads.
-
-Durante la etapa inicial del hackathon esta carpeta puede permanecer casi vacía.
 
 No crear tests falsos únicamente para aparentar cobertura.
 
