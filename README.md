@@ -63,7 +63,7 @@ Para preparar el entorno de desarrollo, crear un entorno con `python -m venv .ve
 
 Con el entorno activo, ejecutar `pip install -r requirements.txt`. Las dependencias incluyen NumPy, pandas, SciPy, scikit-learn, Matplotlib, MNE, NetworkX, Jupyter, python-dotenv y el SDK de OpenAI.
 
-Para habilitar llamadas reales del tutor, configurar `OPENAI_API_KEY` en el entorno o en un `.env` local ignorado por Git, y elegir explícitamente el modelo al crear `Tutor`. `.env.example` contiene solo un placeholder vacío. Importar el tutor o ejecutar `python -m src.tutor` no llama a la API ni abre ventanas.
+Para habilitar llamadas reales del tutor, configurar `OPENAI_API_KEY` en el entorno o en un `.env` local ignorado por Git, y activar `ENABLE_TUTOR=true` con `OPENAI_MODEL=gpt-4.1-mini`. `.env.example` contiene solo un placeholder vacío. Importar el tutor o ejecutar `python -m src.tutor` no llama a la API ni abre ventanas.
 
 ## Ejecutar directamente datos.py
 
@@ -139,8 +139,7 @@ muestras de los primeros ocho campos. El número de canales puede ser mayor que
 ocho. El SDK se detiene en `finally`, también ante un error de lectura.
 Los valores impresos permiten comprobar recepción; no certifican calidad EEG.
 **El hardware sigue sin validarse hasta ejecutar este diagnóstico en Windows.**
-La integración con el modelo queda pendiente; el ejemplo siguiente es posterior
-al diagnóstico de adquisición.
+El ejemplo siguiente integra el modelo local después del diagnóstico de adquisición.
 
 Para adquisición continua, reutilizando `UnicornSource` y la misma configuración:
 
@@ -148,20 +147,60 @@ Para adquisición continua, reutilizando `UnicornSource` y la misma configuraci�
 python scripts/run_unicorn_pipeline.py
 ```
 
-Lee hasta pulsar **Ctrl+C**, muestra serial, frecuencia e índices EEG al inicio y
-un resumen del último bloque aproximadamente cada segundo (también el primero).
-No acumula la sesión en memoria. Cierra la fuente en `finally`, también ante un
-error, y devuelve un código distinto de cero si falla. La configuración de
-`UNICORN_FRAME_LENGTH` determina el tamaño de cada lectura. Este ejecutable se
-limita por ahora a adquisición: no carga modelo, escalador, tutor ni navegador.
-Conservar `scripts/unicorn_smoke_test.py` como diagnóstico breve si falla la sesión.
+Lee hasta pulsar **Ctrl+C**, muestra serial, frecuencia e índices EEG y procesa
+ventanas completas de **10 segundos**. Si `EEG_MODEL_PATH` apunta a un archivo
+local existente, carga el runtime y el escalador configurado; sin modelo muestra
+calidad y características. Cierra la fuente al terminar o ante un error de adquisición.
+Conservar `scripts/unicorn_smoke_test.py` como diagnóstico breve.
 La ejecución física continua en Windows sigue pendiente de validación.
+
+### Tutor OpenAI y TikTok/video opcional
+
+En el `.env` local (ignorado por Git), habilitar explícitamente:
+
+```env
+ENABLE_TUTOR=true
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_API_KEY=<clave local del equipo>
+OPEN_TIKTOK_ON_TRIGGER=true
+```
+
+No subir la clave ni `.env`. En `.env.example`, tutor y video están desactivados
+por defecto. Dejar `OPEN_TIKTOK_ON_TRIGGER=false` permite recibir solo texto.
+`src/tools/distraction_video.py` es el único wrapper de TikTok: abre en el
+navegador predeterminado el video fijo del proyecto, definido en la constante
+pública `TIKTOK_VIDEO_URL`:
+https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044.
+No requiere configurar una URL en el entorno. La aplicación decide su
+apertura mediante la variable local; OpenAI no recibe herramientas ni decide
+abrir TikTok. No se utiliza `visual_alert.py` ni se muestran ventanas Tkinter.
+
+```bash
+python scripts/check_openai_tutor.py
+python scripts/run_unicorn_pipeline.py
+```
+
+El primer comando es una **prueba manual que genera una llamada real a OpenAI**
+(y puede generar costo). Requiere `OPENAI_API_KEY` y `OPENAI_MODEL`, carga `.env`
+y usa una decisión HIGH_LOAD de prueba sin Unicorn, navegador ni alerta visual.
+Se ejecuta por solicitud del equipo, independientemente de `ENABLE_TUTOR`;
+las pruebas automatizadas solo ejercitan su código con mocks.
+
+El segundo requiere Windows y Unicorn y solo llama al tutor habilitado cuando
+`TemporalTrigger` detecta **HIGH_LOAD persistente**. Imprime la respuesta y llama
+explícitamente a `open_distraction_video()` únicamente si `triggered=True`, el
+estado es HIGH_LOAD, hay texto no vacío y `OPEN_TIKTOK_ON_TRIGGER=true`. REST, LOW_LOAD, ARTIFACT, ventanas pendientes, cooldown y errores
+de modelo/OpenAI no abren el video. Los errores de tutor o navegador se imprimen
+y la adquisición continúa con la siguiente ventana; no se reintenta el evento
+ni se reinicia el cooldown. Un fallo de contrato del modelo también se informa
+y permite continuar. Las llamadas son síncronas y pueden retrasar la siguiente
+lectura; esto no garantiza adquisición sin pérdidas durante la latencia de API.
 
 El ejemplo de [una ventana real y cierre seguro](src/README.md#windows-preparación-y-una-ventana-real)
 está en `src/README.md`, junto con el ejemplo `ArraySource` en memoria. El pipeline
 no arranca al importar ni al ejecutar el módulo; la aplicación llama explícitamente
 `EEGPipeline.process_window(...)`. El tutor está deshabilitado por defecto y el
-video solo puede invocarse externamente. Los archivos de datos/modelos y `.env`
+video se abre únicamente mediante la política local descrita arriba. Los archivos de datos/modelos y `.env`
 permanecen locales e ignorados.
 
 Los defaults son **provisionales**: 250 Hz, 8 canales, ventanas de 1 s con paso de

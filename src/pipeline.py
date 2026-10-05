@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import sys
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -76,5 +77,9 @@ class EEGPipeline:
         if (self.tutor is not None and isinstance(decision, TriggerDecision)
                 and decision.triggered is True and decision.state == 'HIGH_LOAD'
                 and 0 <= decision.confidence <= 1):
-            text = self.tutor.respond(decision)
+            try:
+                text = self.tutor.respond(decision)
+            except Exception as exc:
+                print(f'Error del tutor/OpenAI: {exc}; continúa la adquisición.',
+                      file=sys.stderr, flush=True)
         return PipelineResult(features, model_output, probabilities, quality, decision, text)

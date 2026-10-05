@@ -10,7 +10,7 @@ from src.tutor import Tutor
 
 class DistractionVideoTests(unittest.TestCase):
     def setUp(self):
-        self.environment = {"DISTRACTION_VIDEO_URL": "https://www.tiktok.com/"}
+        self.environment = {}
 
     def test_import_does_not_open_browser(self):
         with patch.dict(os.environ, self.environment, clear=True):
@@ -20,25 +20,27 @@ class DistractionVideoTests(unittest.TestCase):
                 importlib.reload(module)
         browser.assert_not_called()
 
-    def test_explicit_call_opens_configured_url_once(self):
+    def test_explicit_call_opens_fixed_url_once(self):
         from src.tools.distraction_video import open_distraction_video
 
         with patch.dict(os.environ, self.environment, clear=True):
             with patch("webbrowser.open", return_value=True) as browser:
                 self.assertTrue(open_distraction_video())
-        browser.assert_called_once_with(self.environment["DISTRACTION_VIDEO_URL"])
+        browser.assert_called_once_with(
+            "https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044")
 
-    def test_missing_or_blank_url_does_not_open_browser(self):
-        from src.tools.distraction_video import open_distraction_video
+    def test_public_constant_and_environment_cannot_override_video(self):
+        from src.tools.distraction_video import TIKTOK_VIDEO_URL, open_distraction_video
 
+        expected = "https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044"
+        self.assertEqual(TIKTOK_VIDEO_URL, expected)
         for environment in ({}, {"DISTRACTION_VIDEO_URL": ""},
-                            {"DISTRACTION_VIDEO_URL": "  "}):
-            with self.subTest(environment=environment):
-                with patch.dict(os.environ, environment, clear=True):
-                    with patch("webbrowser.open") as browser:
-                        with self.assertRaisesRegex(RuntimeError, "DISTRACTION_VIDEO_URL"):
-                            open_distraction_video()
-                    browser.assert_not_called()
+                            {"DISTRACTION_VIDEO_URL": "https://example.com/other"}):
+            with self.subTest(environment=environment), \
+                 patch.dict(os.environ, environment, clear=True), \
+                 patch("webbrowser.open", return_value=False) as browser:
+                self.assertFalse(open_distraction_video())
+                browser.assert_called_once_with(expected)
 
     def test_blocked_decisions_cause_no_api_alert_or_video(self):
         from src.tools.distraction_video import open_distraction_video
@@ -84,7 +86,8 @@ class DistractionVideoTests(unittest.TestCase):
                 browser.assert_not_called()
                 if text:
                     open_distraction_video()
-                browser.assert_called_once_with(self.environment["DISTRACTION_VIDEO_URL"])
+                browser.assert_called_once_with(
+                    "https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044")
         client.responses.create.assert_called_once()
         self.assertNotIn("tools", client.responses.create.call_args.kwargs)
 

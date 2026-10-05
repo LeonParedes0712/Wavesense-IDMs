@@ -150,7 +150,9 @@ romper la racha. El modelo y el tutor no se invocan. Un error posterior de
 filtrado/extracción/modelo rompe la racha y se propaga; no se inventa inferencia.
 El pipeline solo llama `Tutor.respond` para un `TriggerDecision` válido de
 HIGH_LOAD activado. No configura alertas visuales ni abre navegador/video.
-Para el uso sin UI, inyectar `Tutor` sin `visual_alert`.
+Para el uso sin UI, inyectar `Tutor` sin `visual_alert`. Los errores del tutor se
+imprimen y el resultado conserva la decisión con `tutor_text=None`; el cooldown
+permanece activo y la siguiente ventana puede procesarse.
 
 El procesamiento es síncrono: una llamada de tutor puede tardar y bloquear nuevas
 lecturas. Mantener tutor deshabilitado durante las primeras pruebas de hardware;
@@ -414,12 +416,12 @@ Se utiliza `responses.create` del [SDK oficial de OpenAI](https://developers.ope
 
 ## tools/distraction_video.py
 
-`open_distraction_video()` abre el video configurado en `DISTRACTION_VIDEO_URL`
-en el navegador predeterminado. El equipo debe configurar este enlace no secreto
-en el entorno o en su `.env` local, cargado por la aplicación. Si falta o está
-vacío, lanza `RuntimeError` sin abrir nada. Devuelve el resultado de
-`webbrowser.open` (un booleano que indica si se pudo iniciar el navegador).
-Importar la herramienta no abre el navegador.
+Este módulo es el único wrapper de TikTok del proyecto.
+`open_distraction_video()` abre siempre la constante pública `TIKTOK_VIDEO_URL`:
+https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044.
+No lee la URL del entorno ni requiere configurarla en `.env`. Devuelve el
+resultado de `webbrowser.open` (un booleano que indica si se pudo iniciar el
+navegador). Importar la herramienta no abre el navegador.
 
 El tutor no invoca esta herramienta y OpenAI no la recibe ni decide ejecutarla.
 La aplicación puede llamarla explícitamente solo después de recibir texto:
@@ -429,8 +431,10 @@ from src.tools.distraction_video import open_distraction_video
 
 # decision proviene de la instancia persistente de TemporalTrigger.
 text = tutor.respond(decision)
-if text:
-    # Llamada opcional, habilitada por la aplicación según su política.
+import os
+if (decision.triggered is True and decision.state == "HIGH_LOAD"
+        and text and text.strip()
+        and os.getenv("OPEN_TIKTOK_ON_TRIGGER", "").strip().lower() == "true"):
     open_distraction_video()
 ```
 
@@ -445,3 +449,7 @@ No agregar código experimental desorganizado aquí.
 Los experimentos iniciales deben realizarse primero en `notebooks/`.
 
 No guardar aquí datos, modelos entrenados, credenciales ni resultados de experimentos.
+
+El ejecutable `scripts/run_unicorn_pipeline.py` aplica esta política y captura
+los fallos del navegador. La configuración y la prueba manual de API están en
+[el README principal](../README.md#tutor-openai-y-tiktokvideo-opcional).

@@ -1,6 +1,7 @@
 """Adquisición EEG continua en Windows; detener con Ctrl+C, pipeline por ventanas de diez segundos."""
 
 from pathlib import Path
+import os
 import sys
 
 # Permite ejecutar el archivo directamente desde cualquier directorio.
@@ -10,10 +11,13 @@ if __package__ in (None, ''):
 from src.unicorn_stream import UnicornSource
 
 
+def env_enabled(name):
+    return os.getenv(name, '').strip().lower() == 'true'
+
+
 def create_pipeline():
     # Importación diferida: importar el ejecutable no carga modelos ni servicios.
     from dataclasses import replace
-    import os
 
     from src.eeg_config import EEGConfig, QualityConfig
     from src.models import EEGModelRuntime
@@ -27,8 +31,12 @@ def create_pipeline():
         runtime = EEGModelRuntime.from_env()
     else:
         print('Modelo no configurado: mostrando adquisición, calidad y características EEG.', flush=True)
+    tutor = None
+    if env_enabled('ENABLE_TUTOR'):
+        from src.tutor import Tutor
+        tutor = Tutor(model=os.getenv('OPENAI_MODEL', 'gpt-4.1-mini').strip())
     return EEGPipeline(runtime, config=config, quality=QualityConfig.from_env(),
-                       trigger=TemporalTrigger(), tutor=None)
+                       trigger=TemporalTrigger(), tutor=tutor)
 
 
 def print_result(result):
@@ -49,6 +57,26 @@ def print_result(result):
         print(f'Probabilidades Wavesense: {result.wavesense_probabilities}', flush=True)
     if result.decision is not None:
         print(f'TemporalTrigger: {result.decision}', flush=True)
+    if result.tutor_text:
+        print(f'Tutor: {result.tutor_text}', flush=True)
+
+
+def maybe_open_video(result):
+    """La configuración local autoriza el navegador; OpenAI solo aporta texto."""
+    if not (result.decision is not None
+            and result.decision.triggered is True
+            and result.decision.state == 'HIGH_LOAD'
+            and isinstance(result.tutor_text, str) and result.tutor_text.strip()
+            and env_enabled('OPEN_TIKTOK_ON_TRIGGER')):
+        return
+    from src.tools.distraction_video import open_distraction_video
+
+    try:
+        if not open_distraction_video():
+            print('Error de navegador: no se pudo abrir el video; continúa la adquisición.',
+                  file=sys.stderr, flush=True)
+    except Exception as exc:
+        print(f'Error de navegador: {exc}; continúa la adquisición.', file=sys.stderr, flush=True)
 
 
 def run(source, pipeline=None):
@@ -76,6 +104,7 @@ def run(source, pipeline=None):
                 print(f'Error de modelo (contrato de 32 columnas): {exc}', file=sys.stderr, flush=True)
                 continue
             print_result(result)
+            maybe_open_video(result)
 
 
 def main():
