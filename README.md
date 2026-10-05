@@ -100,15 +100,25 @@ de distracción. Ese evento pertenece al guion; no es una detección EEG real.
 Por defecto corre a velocidad x5 y repite hasta Ctrl+C; el primer evento aparece
 aproximadamente a los 9 segundos de reloj. Para velocidad normal, usar `--speed 1`.
 Para terminar automáticamente tras un ciclo, añadir `--cycles 1`.
-Al emitir **Se distrajo**, abre el enlace de TikTok configurado en `.env` con el
-navegador predeterminado, una vez por fase de distracción:
+Al emitir **Se distrajo**, abre el navegador real una vez por fase de distracción.
+Sin configuración, usa el [video elegido para la demo](https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044).
+Para cambiarlo, configurar en `.env`:
 
 ```env
 DISTRACTION_VIDEO_URL=https://www.tiktok.com/
 ```
 
+Para grabar la demostración, también puedes pasar directamente el enlace del
+video, sin editar `.env`:
+
+```powershell
+python scripts/demo_distraccion.py --video "ENLACE_DEL_VIDEO_DE_TIKTOK" --cycles 1
+```
+
+Sustituye `ENLACE_DEL_VIDEO_DE_TIKTOK` por el enlace real. La opción `--video`
+tiene prioridad sobre `.env` y el video predeterminado.
 Puede usarse el enlace de un video específico. Las variables de entorno tienen
-prioridad sobre `.env`. Si falta el enlace o falla el navegador, informa el error
+prioridad sobre `.env`. Si falla el navegador, informa el error
 y continúa la simulación. No requiere dispositivo, SDK ni modelo; no usa OpenAI.
 La apertura del enlace no garantiza reproducción automática del video.
 

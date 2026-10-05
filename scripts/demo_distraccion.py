@@ -3,6 +3,7 @@
 import argparse
 from collections import deque
 import math
+import os
 from pathlib import Path
 import sys
 import time
@@ -18,6 +19,7 @@ from src.tools.distraction_video import open_distraction_video
 # Cada fase dura 20 segundos de señal, no de reloj en modo acelerado.
 PHASES = ('ATENCION', 'DISTRACCION', 'RECUPERACION')
 PHASE_SECONDS = 20
+DEMO_VIDEO_URL = 'https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044'
 
 
 def synthetic_second(second, phase, rng):
@@ -96,9 +98,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--speed', type=float, default=5, help='Velocidad: 1=tiempo real, 5=demo rápida (default).')
     parser.add_argument('--cycles', type=int, default=0, help='Ciclos de 60 s simulados; 0=continuo (default).')
+    parser.add_argument('--video', help='Enlace del video a abrir; tiene prioridad sobre DISTRACTION_VIDEO_URL.')
     args = parser.parse_args(argv)
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parents[1] / '.env')
+    configured_url = os.getenv('DISTRACTION_VIDEO_URL', '').strip()
+    video_url = (args.video if args.video is not None else configured_url or DEMO_VIDEO_URL).strip()
+    if not video_url:
+        parser.error('Falta el video. Usa --video "URL_DEL_VIDEO" o configura DISTRACTION_VIDEO_URL en .env.')
+    if not video_url.startswith(('https://', 'http://')):
+        parser.error('El enlace del video debe comenzar con https:// o http://.')
+    os.environ['DISTRACTION_VIDEO_URL'] = video_url
+    print(f'[DEMO] Se abrirá este enlace en el navegador: {video_url}', flush=True)
     try:
         run(speed=args.speed, cycles=args.cycles)
     except KeyboardInterrupt:

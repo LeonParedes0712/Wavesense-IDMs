@@ -67,6 +67,31 @@ class DistractionDemoTests(unittest.TestCase):
         load.assert_called_once_with(Path(demo.__file__).resolve().parents[1] / '.env')
         run.assert_called_once_with(speed=5, cycles=1)
 
+    def test_video_argument_overrides_environment(self):
+        url = 'https://www.tiktok.com/@demo/video/1234567890'
+        with patch('dotenv.load_dotenv'), patch.object(demo, 'run') as run, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(demo.main(['--video', url, '--cycles', '1']), 0)
+        self.assertEqual(os.environ['DISTRACTION_VIDEO_URL'], url)
+        run.assert_called_once_with(speed=5, cycles=1)
+
+    def test_missing_video_fails_before_session(self):
+        with patch.dict(os.environ, {'DISTRACTION_VIDEO_URL': ''}), \
+             patch('dotenv.load_dotenv'), patch.object(demo, 'run') as run, \
+             contextlib.redirect_stderr(io.StringIO()) as error:
+            with self.assertRaises(SystemExit) as exit_error:
+                demo.main(['--video', ''])
+        self.assertEqual(exit_error.exception.code, 2)
+        self.assertIn('Falta el video', error.getvalue())
+        run.assert_not_called()
+
+    def test_default_video_opens_real_browser_function_at_event(self):
+        url = 'https://www.tiktok.com/@ingenierossiningenio/video/7693213355208609044'
+        with patch.dict(os.environ, {'DISTRACTION_VIDEO_URL': ''}), \
+             patch('dotenv.load_dotenv'), contextlib.redirect_stdout(io.StringIO()):
+            demo.main(['--speed', '100000', '--cycles', '1'])
+        self.browser.assert_called_once_with(url)
+
     def test_invalid_options_rejected(self):
         for speed in (0, -1, float('nan'), float('inf')):
             with self.assertRaises(ValueError):
